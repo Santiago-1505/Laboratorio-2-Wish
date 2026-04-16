@@ -98,6 +98,25 @@ void manage_input(char *comando){
   args[i] = NULL; // execv requiere que el último sea NULL
 
 
+  if(strncmp(args[0], "chd", 3) == 0){
+    if(chdir(args[1]) != 0){
+      printf("Error: No se pudo cambiar el directorio a %s\n", args[1]);
+    }
+    return;
+  }
+
+  if(strncmp(args[0], "route", 5) == 0){
+    if(args[1] == NULL){
+      paths[0] = NULL;
+      return;
+    }
+    for (int j = 1; args[j] != NULL; j++){
+      paths[j - 1] = args[j];
+      paths[j] = NULL; // Asegurar que el siguiente sea NULL
+      return;
+    }
+  }
+
   char fullpath[200];
   int found = 0;
 
@@ -106,8 +125,6 @@ void manage_input(char *comando){
     strcpy(fullpath, paths[i]);
     /*strcat(fullpath, "/");*/
     strcat(fullpath, args[0]);
-
-    printf("Checking path: %s\n", fullpath);
 
     if(access(fullpath, X_OK) == 0){
       found = 1;
