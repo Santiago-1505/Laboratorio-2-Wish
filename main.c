@@ -14,6 +14,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -92,8 +93,35 @@ void manage_input(char *comando){
    * retornando cada token. Termina cuando input llega a NULL.
    */
   
+  int redirect_index;
+  int redirect_counter = 0;
   while ((args[i] = strsep(&input, " ")) != NULL){
+    if (strncmp(args[i], ">", 1) == 0)
+    {
+      redirect_index = i;
+      redirect_counter++;
+      if (redirect_counter > 1)
+      {
+        printf("Error: Redirección múltiple no permitida\n");
+        return;
+      }
+    }
+    
     i++;
+  }
+  char *output_file = NULL;
+
+  if (redirect_counter == 1)
+  {
+    if (args[redirect_index + 1] == NULL)
+    {
+      printf("Error: Falta archivo de redirección\n");
+      return;
+    }
+
+    output_file = args[redirect_index + 1];
+
+    args[redirect_index] = NULL; // cortar args para execv
   }
   args[i] = NULL; // execv requiere que el último sea NULL
 
@@ -135,14 +163,30 @@ void manage_input(char *comando){
     printf("the command does not exist\n");
     return;
   }
-  
 
   pid_t pid = fork();
 
-  if (pid == 0){
-    execv(fullpath, args);  // args[0] = nombre, args[1..] = argumentos
+  if (pid == 0)
+  {
+
+    if (output_file != NULL)
+    {
+      int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+      if (fd < 0)
+      {
+        printf("Error al abrir archivo\n");
+        exit(EXIT_FAILURE);
+      }
+
+      dup2(fd, STDOUT_FILENO);
+      close(fd);
+    }
+
+    execv(fullpath, args);
     exit(EXIT_FAILURE);
-  } else {
+  }
+  else
+  {
     wait(NULL);
   }
 }
