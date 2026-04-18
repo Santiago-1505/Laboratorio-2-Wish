@@ -54,6 +54,24 @@ Es importante tener en cuenta que algunos comandos internos (como `chd` o `route
 
 Finalmente, la función espera a que todos los procesos hijos terminen usando `waitpid`, recorriendo el arreglo de PIDs almacenados previamente. Esto asegura que el shell no continúe hasta que todos los comandos en paralelo hayan finalizado.
 
+### Función `execute_single`
+
+Esta función se encarga de procesar y ejecutar un subcomando junto con sus argumentos. Generalmente es llamada desde la función `manage_input` y recibe como parámetro un puntero a `char` llamado `sub`, cuyo nombre proviene de “subcomando”. Esto se debe a que la función puede recibir comandos individuales que han sido previamente separados de una cadena mayor mediante el uso de ampersands (`&`).
+
+La función inicia separando el subcomando en tokens utilizando el espacio como delimitador mediante `strsep`. Durante este proceso se ignoran los tokens vacíos generados por múltiples espacios consecutivos. Además, se verifica si alguno de los tokens corresponde al operador de redirección (`>`), lo cual indicaría que el comando requiere redirigir su salida. También se comprueba que exista como máximo un operador de redirección; en caso contrario, se reporta un error.
+
+Posteriormente, se realizan validaciones iniciales sobre el subcomando. Si no se encuentra ningún token válido, la función retorna `-1`. También se contempla un caso especial para el comando `wish` con las opciones `--version` o `-v`, en cuyo caso se imprime la versión y se retorna `-1`.
+
+En caso de que exista redirección, se valida que se haya especificado un archivo de salida inmediatamente después del operador `>`. Si esta condición no se cumple, se reporta un error. Cuando la redirección es válida, se guarda el nombre del archivo y se ajusta el arreglo de argumentos colocando `NULL` en la posición del operador para que `execv` reciba correctamente la lista de argumentos.
+
+La función implementa dos comandos built-in. El primero es `chd`, que permite cambiar el directorio de trabajo utilizando `chdir`; si ocurre un error, se imprime un mensaje indicando el fallo. El segundo es `route`, que permite modificar la variable global `paths`, la cual almacena las rutas donde se buscarán los ejecutables. Si `route` no recibe argumentos, se limpia la lista estableciendo su primera posición en `NULL`. En caso contrario, se copian los argumentos en `paths` utilizando `strdup`, sobrescribiendo los valores existentes y finalizando con un `NULL`.
+
+Para la ejecución de comandos externos, la función recorre el arreglo global `paths` y construye rutas completas concatenando cada path con el nombre del comando (ubicado en `args[0]`). Luego, utiliza la función `access` para verificar si el ejecutable existe y tiene permisos de ejecución. Si no se encuentra el comando en ninguna ruta, se imprime un mensaje de error y se retorna `-1`.
+
+Si el ejecutable es encontrado, la función realiza un `fork`. En el proceso hijo, si se ha especificado redirección, se abre el archivo correspondiente y se redirige la salida estándar utilizando `dup2`. Posteriormente, se ejecuta el programa con `execv`. En caso de que falle la ejecución, el proceso hijo finaliza con error.
+
+Finalmente, el proceso padre retorna el PID del proceso hijo, lo que permite que la función que llamó a `execute_single` pueda esperar su finalización utilizando `waitpid`. En caso de errores o cuando se ejecuta un comando built-in, la función retorna `-1`.
+
 ## Problemas presentados durante el desarrollo
 
 ## Pruebas realizadas

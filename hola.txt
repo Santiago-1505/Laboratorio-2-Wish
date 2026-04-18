@@ -1,5 +1,1 @@
-cat hola.txt
-echo "hola mundo! batch"
-ps 
-pwd
-wish -v
+mundo

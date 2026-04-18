@@ -21,10 +21,11 @@
 #define FALSE 0
 #define MAX_PATHS 100
 
-char *paths[MAX_PATHS] = {"/usr/bin/", "/bin/", NULL};
+char *paths[MAX_PATHS] = {"/bin", NULL};
 
 /* Prototipo de la función que procesa cada comando ingresado */
 void manage_input(char *comando);
+void error();
 
 /**
  * execute_single - Parsea y ejecuta un único sub-comando (sin &).
@@ -37,7 +38,21 @@ void manage_input(char *comando);
  * @return: PID del proceso hijo creado, o -1 si no se creó ninguno.
  */
 pid_t execute_single(char *sub) {
-  char *input = sub;
+  char buffer[200];
+  int j = 0;
+
+  for (int i = 0; sub[i] != '\0'; i++) {
+    if (sub[i] == '>') {
+      buffer[j++] = ' ';
+      buffer[j++] = '>';
+      buffer[j++] = ' ';
+    } else {
+      buffer[j++] = sub[i];
+    }
+  }
+  buffer[j] = '\0';
+
+  char *input = buffer;
 
   /* Recolectar argumentos */
   char *args[100];
@@ -46,16 +61,20 @@ pid_t execute_single(char *sub) {
   int redirect_index = -1;
   int redirect_counter = 0;
 
-  while ((args[i] = strsep(&input, " ")) != NULL) {
+  while ((args[i] = strsep(&input, " \t")) != NULL) {
     /* Saltar tokens vacíos generados por espacios múltiples */
     if (args[i][0] == '\0') {
       continue;
     }
-    if (strncmp(args[i], ">", 1) == 0) {
+    else if (strcmp(args[i], ">>") == 0) {
+        error();
+        return -1;
+    }
+    else if (strcmp(args[i], ">") == 0) {
       redirect_index = i;
       redirect_counter++;
       if (redirect_counter > 1) {
-        printf("Error: Redirección múltiple no permitida\n");
+        error();
         return -1;
       }
     }
@@ -63,33 +82,31 @@ pid_t execute_single(char *sub) {
   }
   args[i] = NULL; /* execv requiere que el último sea NULL */
 
-  if (strncmp(args[0], "wish", 4) == 0 &&
-      (strncmp(args[1], "--version", 9) == 0 ||
-       strncmp(args[1], "-v", 2) == 0)) {
-    printf("v0.0.1\n");
-    return -1;
-  }
-
   /* Si no hubo ningún token real, ignorar */
   if (i == 0 || args[0] == NULL || args[0][0] == '\0') {
     return -1;
   }
 
-  char *output_file = NULL;
-
-  if (redirect_counter == 1) {
-    if (redirect_index < 0 || args[redirect_index + 1] == NULL) {
-      printf("Error: Falta archivo de redirección\n");
+  /* Si el usuario escribe "exit", terminar el shell */
+  if (strncmp(args[0], "exit", 4) == 0) {
+    if (args[1] != NULL && args[1][0] != '\0') {
+      error();
       return -1;
     }
-    output_file = args[redirect_index + 1];
-    args[redirect_index] = NULL; /* cortar args para execv */
+    exit(EXIT_SUCCESS);
   }
 
   /* Built-in: chd */
   if (strncmp(args[0], "chd", 3) == 0) {
-    if (chdir(args[1]) != 0) {
-      printf("Error: No se pudo cambiar el directorio a %s\n", args[1]);
+    if (args[1] == NULL || args[2] != NULL) {
+
+      error();
+      return -1;
+    }
+
+    else if (chdir(args[1]) != 0) {
+      error();
+      return -1;
     }
     return -1;
   }
@@ -114,12 +131,33 @@ pid_t execute_single(char *sub) {
     return -1;
   }
 
+  // Built-in shell version
+  if (strncmp(args[0], "wish", 4) == 0 &&
+      (strncmp(args[1], "--version", 9) == 0 ||
+       strncmp(args[1], "-v", 2) == 0)) {
+    printf("v0.0.1\n");
+    return -1;
+  }
+
+  char *output_file = NULL;
+
+  if (redirect_counter == 1) {
+    if (redirect_index < 0 || args[redirect_index + 1] == NULL ||
+        args[redirect_index + 2] != NULL) {
+      error();
+      return -1;
+    }
+    output_file = args[redirect_index + 1];
+    args[redirect_index] = NULL; /* cortar args para execv */
+  }
+
   /* Buscar el ejecutable en paths */
   char fullpath[200];
   int found = 0;
 
   for (int k = 0; paths[k] != NULL; k++) {
     strcpy(fullpath, paths[k]);
+    strcat(fullpath, "/");
     strcat(fullpath, args[0]);
 
     if (access(fullpath, X_OK) == 0) {
@@ -129,8 +167,7 @@ pid_t execute_single(char *sub) {
   }
 
   if (!found) {
-    printf("%s %s", args[0], args[1]);
-    printf("the command does not exist\n");
+    error();
     return -1;
   }
 
@@ -142,15 +179,16 @@ pid_t execute_single(char *sub) {
     if (output_file != NULL) {
       int fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
       if (fd < 0) {
-        printf("Error al abrir archivo\n");
+        error();
         exit(EXIT_FAILURE);
       }
       dup2(fd, STDOUT_FILENO);
+      dup2(fd, STDERR_FILENO);
       close(fd);
     }
 
     execv(fullpath, args);
-    exit(EXIT_FAILURE);
+    error();
   }
 
   /* Proceso padre: devuelve el PID para que el llamador espere */
@@ -188,12 +226,12 @@ int main(int argc, char *argv[]) {
   } else if (argc == 2) {
     input = fopen(argv[1], "r");
     if (input == NULL) {
-      fprintf(stderr, "wish: no se pudo abrir el archivo '%s'\n", argv[1]);
+      error();
       exit(EXIT_FAILURE);
     }
     interactive = FALSE;
   } else {
-    fprintf(stderr, "Usage: wish [batch_file]\n");
+    error();
     exit(EXIT_FAILURE);
   }
 
@@ -208,7 +246,7 @@ int main(int argc, char *argv[]) {
       if (!interactive) {
         fclose(input);
       }
-      exit(EXIT_FAILURE);
+      exit(EXIT_SUCCESS);
     }
     manage_input(comando);
   }
@@ -228,10 +266,6 @@ int main(int argc, char *argv[]) {
  *           incluyendo el '\n' al final tal como la devuelve fgets().
  */
 void manage_input(char *comando) {
-  /* Si el usuario escribe "exit", terminar el shell */
-  if (strncmp(comando, "exit\n", 5) == 0) {
-    exit(EXIT_SUCCESS);
-  }
 
   /* Eliminar el '\n' del final */
   comando[strcspn(comando, "\n")] = '\0';
@@ -267,4 +301,9 @@ void manage_input(char *comando) {
   for (int i = 0; i < n_pids; i++) {
     waitpid(pids[i], NULL, 0);
   }
+}
+
+void error() {
+  char error_message[30] = "An error has occurred\n";
+  write(STDERR_FILENO, error_message, strlen(error_message));
 }
