@@ -25,6 +25,7 @@ char *paths[MAX_PATHS] = {"/bin", NULL};
 
 /* Prototipo de la función que procesa cada comando ingresado */
 void manage_input(char *comando);
+pid_t execute_single(char *sub);
 void error();
 
 /**
