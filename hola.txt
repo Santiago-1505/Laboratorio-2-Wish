@@ -1,1 +1,4 @@
+cat hola.txt
 ps
+chd .git ..
+echo final & echo udea & echo so
